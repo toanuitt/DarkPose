@@ -1,14 +1,3 @@
-# ------------------------------------------------------------------------------
-# Copyright (c) Microsoft
-# Licensed under the MIT License.
-# Written by Bin Xiao (Bin.Xiao@microsoft.com)
-# Modified by Hanbin Dai (daihanbin.ac@gmail.com) and Feng Zhang (zhangfengwcy@gmail.com)
-# ------------------------------------------------------------------------------
-
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
- 
 import time
 import logging
 import os
@@ -16,10 +5,10 @@ import os
 import numpy as np
 import torch
 
-from core.evaluate import accuracy
-from core.inference import get_final_preds
-from utils.transforms import flip_back
-from utils.vis import save_debug_images
+from .evaluate import accuracy
+from .inference import get_final_preds
+from lib.utils.transforms import flip_back
+from lib.utils.vis import save_debug_images
 
 
 logger = logging.getLogger(__name__)
@@ -125,10 +114,7 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
                 output = outputs
 
             if config.TEST.FLIP_TEST:
-                # this part is ugly, because pytorch has not supported negative index
-                # input_flipped = model(input[:, :, :, ::-1])
-                input_flipped = np.flip(input.cpu().numpy(), 3).copy()
-                input_flipped = torch.from_numpy(input_flipped).cuda()
+                input_flipped = input.flip(3)
                 outputs_flipped = model(input_flipped)
 
                 if isinstance(outputs_flipped, list):
@@ -139,6 +125,12 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
                 output_flipped = flip_back(output_flipped.cpu().numpy(),
                                            val_dataset.flip_pairs)
                 output_flipped = torch.from_numpy(output_flipped.copy()).cuda()
+
+
+                # feature is not aligned, shift flipped heatmap for higher accuracy
+                if config.TEST.SHIFT_HEATMAP:
+                    output_flipped[:, :, :, 1:] = \
+                        output_flipped.clone()[:, :, :, 0:-1]
 
                 output = (output + output_flipped) * 0.5
 
