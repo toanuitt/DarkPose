@@ -20,13 +20,16 @@ from core.evaluate import accuracy
 from core.inference import get_final_preds
 from utils.transforms import flip_back
 from utils.vis import save_debug_images
+from utils.vis import save_images
 
+# Miscellaneous Imports
+from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
 
 def train(config, train_loader, model, criterion, optimizer, epoch,
-          output_dir, tb_log_dir, writer_dict):
+          output_dir, tb_log_dir):#, writer_dict):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
@@ -36,19 +39,33 @@ def train(config, train_loader, model, criterion, optimizer, epoch,
     model.train()
 
     end = time.time()
-    for i, (input, target, target_weight, meta) in enumerate(train_loader):
+
+    tbar = tqdm(train_loader)
+
+    print("Epoch ",str(epoch),":")
+
+    for i, (input, target, target_weight, meta) in enumerate(tbar):
         # measure data loading time
         data_time.update(time.time() - end)
 
-        # compute output
-        outputs = model(input)
+        input  = input.cuda()
+        target = target.cuda()
+        target_weight = target_weight.cuda()
 
-        target = target.cuda(non_blocking=True)
-        target_weight = target_weight.cuda(non_blocking=True)
+        # compute output
+        # print(model)
+        outputs = model(input)
+        
+        # quit()
+
+        # target = target.cuda(non_blocking=True)
+        # target_weight = target_weight.cuda(non_blocking=True)
 
         if isinstance(outputs, list):
+            # print(outputs[0].shape, target.shape, target_weight.shape)
             loss = criterion(outputs[0], target, target_weight)
             for output in outputs[1:]:
+                # print(output.shape, target.shape, target_weight.shape)
                 loss += criterion(output, target, target_weight)
         else:
             output = outputs
@@ -60,6 +77,8 @@ def train(config, train_loader, model, criterion, optimizer, epoch,
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+
+        # quit()
 
         # measure accuracy and record loss
         losses.update(loss.item(), input.size(0))
@@ -73,29 +92,31 @@ def train(config, train_loader, model, criterion, optimizer, epoch,
         end = time.time()
 
         if i % config.PRINT_FREQ == 0:
-            msg = 'Epoch: [{0}][{1}/{2}]\t' \
-                  'Time {batch_time.val:.3f}s ({batch_time.avg:.3f}s)\t' \
-                  'Speed {speed:.1f} samples/s\t' \
-                  'Data {data_time.val:.3f}s ({data_time.avg:.3f}s)\t' \
-                  'Loss {loss.val:.5f} ({loss.avg:.5f})\t' \
-                  'Accuracy {acc.val:.3f} ({acc.avg:.3f})'.format(
-                      epoch, i, len(train_loader), batch_time=batch_time,
-                      speed=input.size(0)/batch_time.val,
-                      data_time=data_time, loss=losses, acc=acc)
-            logger.info(msg)
+            # msg = 'Epoch: [{0}][{1}/{2}]\t' \
+            #       'Time {batch_time.val:.3f}s ({batch_time.avg:.3f}s)\t' \
+            #       'Speed {speed:.1f} samples/s\t' \
+            #       'Data {data_time.val:.3f}s ({data_time.avg:.3f}s)\t' \
+            #       'Loss {loss.val:.5f} ({loss.avg:.5f})\t' \
+            #       'Accuracy {acc.val:.3f} ({acc.avg:.3f})'.format(
+            #           epoch, i, len(train_loader), batch_time=batch_time,
+            #           speed=input.size(0)/batch_time.val,
+            #           data_time=data_time, loss=losses, acc=acc)
+            # logger.info(msg)
 
-            writer = writer_dict['writer']
-            global_steps = writer_dict['train_global_steps']
-            writer.add_scalar('train_loss', losses.val, global_steps)
-            writer.add_scalar('train_acc', acc.val, global_steps)
-            writer_dict['train_global_steps'] = global_steps + 1
+            # writer = writer_dict['writer']
+            # global_steps = writer_dict['train_global_steps']
+            # writer.add_scalar('train_loss', losses.val, global_steps)
+            # writer.add_scalar('train_acc', acc.val, global_steps)
+            # writer_dict['train_global_steps'] = global_steps + 1
 
             prefix = '{}_{}'.format(os.path.join(output_dir, 'train'), i)
-            save_debug_images(config, input, meta, target, pred*4, output,
-                              prefix)
+            # save_debug_images(config, input, meta, target, pred*4, output,
+            #                   prefix)
+
+        tbar.set_description('Train Acc: %.6f' % acc.avg)
 
 
-def validate(config, val_loader, val_dataset, model, criterion, output_dir,
+def validate(config, val_loader, val_dataset, dataset_name, model, criterion, output_dir,
              tb_log_dir, writer_dict=None):
     batch_time = AverageMeter()
     losses = AverageMeter()
@@ -116,8 +137,14 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
     idx = 0
     with torch.no_grad():
         end = time.time()
-        for i, (input, target, target_weight, meta) in enumerate(val_loader):
-            # compute output
+
+        tbar = tqdm(val_loader)
+
+        for i, (input, target, target_weight, meta) in enumerate(tbar):
+            input  = input.cuda()
+            target = target.cuda()
+            target_weight = target_weight.cuda()
+
             outputs = model(input)
             if isinstance(outputs, list):
                 output = outputs[-1]
@@ -142,8 +169,8 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
 
                 output = (output + output_flipped) * 0.5
 
-            target = target.cuda(non_blocking=True)
-            target_weight = target_weight.cuda(non_blocking=True)
+            # target = target.cuda(non_blocking=True)
+            # target_weight = target_weight.cuda(non_blocking=True)
 
             loss = criterion(output, target, target_weight)
 
@@ -178,24 +205,45 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
             idx += num_images
 
             if i % config.PRINT_FREQ == 0:
-                msg = 'Test: [{0}/{1}]\t' \
-                      'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t' \
-                      'Loss {loss.val:.4f} ({loss.avg:.4f})\t' \
-                      'Accuracy {acc.val:.3f} ({acc.avg:.3f})'.format(
-                          i, len(val_loader), batch_time=batch_time,
-                          loss=losses, acc=acc)
-                logger.info(msg)
+                # msg = 'Test: [{0}/{1}]\t' \
+                #       'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t' \
+                #       'Loss {loss.val:.4f} ({loss.avg:.4f})\t' \
+                #       'Accuracy {acc.val:.3f} ({acc.avg:.3f})'.format(
+                #           i, len(val_loader), batch_time=batch_time,
+                #           loss=losses, acc=acc)
+                # logger.info(msg)
 
                 prefix = '{}_{}'.format(
                     os.path.join(output_dir, 'val'), i
                 )
-                save_debug_images(config, input, meta, target, pred*4, output,
-                                  prefix)
+                # save_debug_images(config, input, meta, target, pred*4, output,
+                #                   prefix)
 
-        name_values, perf_indicator = val_dataset.evaluate(
-            config, all_preds, output_dir, all_boxes, image_path,
-            filenames, imgnums
-        )
+            # print(meta)
+
+            # if i == 10:
+            #     break
+
+            # save_images(input, pred*4, meta['joints_vis'], output_dir, meta, i)
+
+            tbar.set_description('Val   Acc: %.6f' % acc.avg)
+
+        if dataset_name == 'mpii':
+            name_values, perf_indicator, perf_indicator_01 = val_dataset.evaluate(
+                config, all_preds, output_dir, all_boxes, image_path,
+                filenames, imgnums)
+
+        elif dataset_name == 'coco':
+            name_values, perf_indicator = val_dataset.evaluate(
+                config, all_preds, output_dir, all_boxes, image_path,
+                filenames, imgnums)
+
+        elif dataset_name == 'posetrack':
+            name_values, perf_indicator = val_dataset.evaluate(
+                config, all_preds, output_dir, all_boxes, image_path,
+                filenames, imgnums)
+
+            print(name_values, perf_indicator)
 
         model_name = config.MODEL.NAME
         if isinstance(name_values, list):
@@ -207,32 +255,19 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
         if writer_dict:
             writer = writer_dict['writer']
             global_steps = writer_dict['valid_global_steps']
-            writer.add_scalar(
-                'valid_loss',
-                losses.avg,
-                global_steps
-            )
-            writer.add_scalar(
-                'valid_acc',
-                acc.avg,
-                global_steps
-            )
+            writer.add_scalar('valid_loss', losses.avg,global_steps)
+            writer.add_scalar('valid_acc', acc.avg, global_steps)
             if isinstance(name_values, list):
                 for name_value in name_values:
-                    writer.add_scalars(
-                        'valid',
-                        dict(name_value),
-                        global_steps
-                    )
+                    writer.add_scalars('valid', dict(name_value), global_steps)
             else:
-                writer.add_scalars(
-                    'valid',
-                    dict(name_values),
-                    global_steps
-                )
+                writer.add_scalars('valid', dict(name_values), global_steps)
             writer_dict['valid_global_steps'] = global_steps + 1
 
-    return perf_indicator
+    if dataset_name == 'mpii':
+        return perf_indicator, perf_indicator_01
+    elif dataset_name == 'coco' or dataset_name == 'posetrack':
+        return perf_indicator
 
 
 # markdown format output
