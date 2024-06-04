@@ -157,3 +157,5 @@ If you use our code or models in your research, please cite with:
 ## Acknowledgement
 Thanks for the open-source HRNet
 * [Deep High-Resolution Representation Learning for Human Pose Estimation, Sun, Ke and Xiao, Bin and Liu, Dong and Wang, Jingdong](https://github.com/leoxiaobin/deep-high-resolution-net.pytorch/)
+## Experiment 
+Apply dark pose for check method on squat doing
